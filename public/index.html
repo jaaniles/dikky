@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=0.7">
+	<title>Dikky</title>
+	<script src="/socket.io/socket.io.js"></script>
+	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.5.0/css/font-awesome.min.css">
+	<link href="/css/vendor/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-alpha.2/css/bootstrap.min.css" integrity="sha384-y3tfxAZXuh4HwSYylfB+J125MxIs6mR5FOHamPBG064zB+AFeWH94NdvaCBm8qnd" crossorigin="anonymous">
+	<link href="/css/flat-ui.css" rel="stylesheet">
+	<link href="/css/remodal.css" rel="stylesheet">
+	<link href="/css/custom.css" rel="stylesheet">
+	<link href="/css/remodal-default-theme.css" rel="stylesheet">
+	<script src="/socket.io/socket.io.js"></script>
+	<script src="//code.jquery.com/jquery-1.11.2.min.js"></script>
+	<script src="//code.jquery.com/ui/1.11.4/jquery-ui.js"></script>
+	<script src="/js/remodal.js"></script>
+	<script src="/js/flat-ui.min.js"></script>
+  	<!-- W3CSS -->
+  	<link rel="stylesheet" href="/css/w3.css">
+<body>
+	<div class="center">
+		<div class="demo-headline">
+		<h1 class="demo-logo" id="logotext">
+			#DIKKY
+			<small></small></h1>
+		</div>
+		</div>
+	</div>
+	<div id="lobby" class="center">
+		<div class="col-lg-4 col-xs-12">
+			<input id="name" type="text" value="" class='darkinput'></input><label>&nbsp;  Name </label><br>
+          	<label class="checkbox">
+            <input type="checkbox" value="" id="readybutton" data-toggle="checkbox" class='w3-check nopadding'>
+            I'm ready
+          	</label>
+          	<hr class='mobiledivider'>
+		</div>
+		<div class="col-lg-4 col-xs-12" id='sessioninfo'>
+			<div style='float:left'>
+			Session: <span type='text' id="session"></span>
+			</div>
+			<div style='text-align:right'>
+				<img src="/img/icons/map.svg" class='icon'>
+			</div>
+			<hr>
+			<h4><div style='float:left'><h5>Users:</h5></div><div style='text-align:right'><img src="/img/icons/clipboard.svg" class='icon'></div></h4>
+			<ul id="playerlist">
+			</ul>
+			<hr>
+			<div id="controls" style="display:none;text-align:center">
+			<button id="launchButton" class='btn btn-danger'><i class="fa fa-play"></i> LAUNCH</button>
+			<p id="launchinfo"></p>
+			</div>
+		</div>
+	</div>
+	<div id="main" style="display:none" class='remodal-bg center'>
+		<div class="row">
+			<div id="votingDiv" class="col-xs-12"></div>
+		</div>
+		<h4><img src="/img/icons/clock.svg" id='clockIcon'>: <span id='turnTimer'></span></h4>
+	</div>
+	<div class='announcement' id='announcementBar'>
+		<h1 id='announcementText'></h1>
+	</div>
+	<div class="remodal" data-remodal-target="cardmodal">
+		<h1 id='cardName'>Card</h1>
+		<p id='cardInfo'></p>
+		<div id="cardcontrols" class="hide">
+			<!--<button id='skipCard' data-remodal-action="cancel" class="remodal-cancel"> Skip </button>-->
+			<button id='completeCard' data-remodal-action="cancel" class="remodal-confirm" style='padding: 5px'> Completed </button>
+		</div>
+	</div>
+	<script>
+		var cardwindow = $('[data-remodal-target=cardmodal]').remodal();
+	</script>
+
+</body>
+
+<script>
+var selectedCard;
+$( document ).ready(function() {
+	console.log(window.location);
+	var socket = io.connect(window.location.origin);
+	//var socket = io.connect("http://192.168.100.44:80");
+	var sessionId = window.location.pathname.substring(1);
+	socket.emit('sessionId', {sessionId: sessionId});
+
+	socket.on("connectedToSession", function(data){
+		var session = data.session;
+		console.log("You have been connected to session " + session.id)
+	})
+	socket.on("sessionInfo", function(data){
+		if (data.session.state == "lobby"){
+			$("#session").html(data.session.id)
+			$("#name").attr("value", data.personal.name)
+			$("#playerlist").html("")
+			for (var i = 0; i < data.sessionUsers.length; i++){
+				var li = $("<li>")
+				var name = data.sessionUsers[i].name.replace(/(<([^>]+)>)/ig,"");
+				li.append(name)
+				if (data.sessionUsers[i].master){
+					li.prepend("<i class='fa fa-graduation-cap'></i> ")
+				}
+				if (data.sessionUsers[i].ready){
+					li.prepend("<i class='fa fa-check'></i> ")
+				}
+				$("#playerlist").append(li)
+			}
+		}
+	})
+	socket.on("newCards", function(data){
+		if (cardwindow.getState() == "opened" || cardwindow.getState() == "closing") {cardwindow.close()}
+		// Happens when coming out of intermission
+		if ($("#announcementBar").css("display") == "block"){
+			$("#announcementBar").fadeOut("fast")
+			$("#main").fadeIn("fast")
+		}
+		var turn = data.round.turn
+		if ($("#main").css("display") == "none"){
+			$("#lobby").slideUp("fast")
+			$("#main").slideDown("fast")
+		}
+		$("#votingDiv").html("")
+		$("#votingDiv").append("<h4>Vote a card for " + turn.player_turn.name + "</h4>")
+		for (var i = 0; i < turn.cards.length; i++){
+			var card = turn.cards[i]
+			var openCardContainer = $("<div id='cardDiv' class='grid nopadding bckcolor'>")
+			var cardDiv = $("<div class='col-lg-3 col-xs-4 w3-card-8 w3-dark-grey card nopadding bckcolor'>")
+			cardDiv.append("<header class='w3-container w3-dark-grey nopadding bckcolor cardheader'>"
+			+"<h3>"+card.name+"</h3>"
+			+"<h5>"+card.rarity+"<h5>"
+			+"</header>"
+			+"<hr>"
+			+"<div class='w3-container w3-center nopadding bckcolor cardcontent'>"
+			+"<p>"+card.text+"</p>"
+			//+"<p id='card"+i+"votes' style='display:'>"+card.votes+"</p>"
+			+"</div>"
+			+"<div class='cardfooter bckcolor'>"
+			+"<button class='w3-btn-block w3-light-grey votebutton' value='"+i+"'>Vote</button>"
+			+"</div>"
+			)
+			openCardContainer.append(cardDiv)
+
+			$("#votingDiv").append(openCardContainer)
+		}
+	})
+
+	socket.on("waitingForTaskCompletion", function(data){
+		var winningCard = getWinningCard(data.round.turn.cards)
+		var playerName = data.round.turn.player_turn.name
+		var cardName = winningCard.name
+		var cardText = winningCard.text
+		console.log(winningCard)
+		// Has different text when unlocked: overwrite
+		if (winningCard.unlockName){
+			cardName = winningCard.unlockName
+			cardText = winningCard.unlockText
+		}
+
+		$("#cardName").html(playerName + ": " + cardName)
+		$("#cardInfo").html(cardText)
+		if (cardwindow.getState() == "closed"){
+			cardwindow.open()
+		}
+	})
+	socket.on("completionPending", function(){
+		if (cardwindow.getState() == "closed"){
+			cardwindow.open()
+		}
+		$("#cardcontrols").removeClass("hide")
+	})
+	socket.on("intermission", function(data){
+		$("#cardcontrols").addClass("hide")
+		$("#announcementBar").fadeIn("fast")
+		$("#main").fadeOut("fast")
+		$("#announcementText").html("Next: " +  data.nextPlayer.name)
+	})
+
+	socket.on("turnTimer", function(data){
+		$("#turnTimer").html(Math.max(0, Math.floor(data.timeLeft/100)))
+	})
+	socket.on("updateCardState", function(data){
+		for (var i = 0; i < data.cards.length; i++){
+			$("#card"+i+"votes").html(data.cards[i].votes)
+		}
+	})
+	socket.on("launchError", function(data){
+		$("#launchinfo").html(data.msg)
+	})
+	socket.on("master", function(data){
+		if ($("#controls").css("display") == "none"){
+			$("#controls").css("display", "")
+		}
+	})
+	// Voting logic for dynamically created cards
+	$("body").on("click", ".votebutton", function(){
+		$(this).addClass("colorVoteButton")
+		socket.emit("voteCard", {cardId: $(this).attr("value")})
+ 	});
+	$("#name").change(function(data){
+		socket.emit('nameChange', {newName: $("#name").val()})
+	})
+	$("#readybutton").change(function(data){
+		socket.emit("readyChange", {ready: $("#readybutton").prop("checked")})
+	})
+	$("#launchButton").click(function(){
+		socket.emit("launchGame")
+	})
+	$("#skipCard").click(function(){
+		socket.emit("skipCard")
+	})
+	$("#completeCard").click(function(){
+		socket.emit("completeCard")
+	})
+})
+</script>
+<script>
+	// Utility
+	function showDiscoveredCard(card){
+		$("#lockedCard").slideUp("fast", function(){
+		    $("#discoveredCard").html("")
+		    $("#discoveredCard").append("<div class='demo-headline'><h1 class='demo-logo'>"+card.name+"<br><small>"+card.type+"</small></div></div><hr>")
+		    $("#discoveredCard").append("<dl class='dl-horizontal'><dt>Objective:</dt><dd><p class='text-left'>"+card.text+"</p></dd></dl>")
+		    $("#discoveredCardContent").slideDown("slow")
+	    })
+	}
+	function confirmDiscoveredCard(){
+		$("#discoveredCardContent").slideUp("fast", function(){
+  			$("#lockedCard").slideDown("fast")
+  		})
+	}
+	function setSelectedCard(cardId){
+		selectedCard = cardId
+	}
+	function getWinningCard(cards) {
+	    var index = 0;
+	    var topVotes = cards[0].votes;
+	    for (var i = 1; i < cards.length; ++i) {
+	        if (cards[i].votes > topVotes || (cards[i].votes === topVotes && Math.random() < 0.5)) {
+	            index = i;
+	            topVotes = cards[i].votes;
+	        }
+	    }
+	    return cards[index];
+	}
+</script>
+</html>
